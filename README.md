@@ -1,4 +1,4 @@
-# vschac.github.io
+# Spotify Playlist Hotkey
 
 This project uses the Spotify web API to add songs to a playlist selected by the user with the hotkey SHIFT+A
 

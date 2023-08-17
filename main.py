@@ -1,73 +1,127 @@
-from dotenv import load_dotenv
 import os
-import base64
-from requests import post, get
+from requests import post, get, delete
 import json
-from urllib.parse import urlencode
+import spotipy
+from spotipy.oauth2 import SpotifyOAuth
+from pynput import keyboard
 
-#authenticate API
-load_dotenv()
 
-client_id = os.getenv("CLIENT_ID")
-client_secret = os.getenv("CLIENT_SECRET")
-redirect_url = "https://localhost:8000/callback"
-SCOPE = 'user-read-currently-playing'
+client_id = "user's client id"
+client_secret = "user's client secret"
+redirect_url = "https://vschac.github.io"
+SCOPES = ['user-read-currently-playing', 'playlist-modify-public', 'playlist-read-private']
 
-#print(client_id, client_secret)
 
-def get_cc_token():
-    auth_string = client_id + ":" + client_secret
-    auth_bytes = auth_string.encode("utf-8")
-    auth_base64 = str(base64.b64encode(auth_bytes), "utf-8")
 
-    url = "https://accounts.spotify.com/api/token"
-    headers = {
-        "Authorization": "Basic " + auth_base64,
-        "Content-Type": "application/x-www-form-urlencoded"
-    }
-    data = {"grant_type": "client_credentials"}
-    result = post(url, headers=headers, data=data)
-    json_result = json.loads(result.content)
-    token = json_result["access_token"]
-    return token
+def make_token(index):
+    spotify_oauth = create_spotify_oauth(index)
+    token_info = spotify_oauth.get_access_token(code=None, as_dict=True)
+    return token_info['access_token']
 
-auth_params = {
-    'client_id': client_id,
-    'response_type': 'code',
-    'redirect_uri': redirect_url,
-    'scope': SCOPE
-}
 
-auth_url = 'https://accounts.spotify.com/authorize?' + urlencode(auth_params)
-print(f'Visit this URL to authorize your app: {auth_url}')
-
-def get_access_token(auth_code: str):
-    response = post(
-        "https://accounts.spotify.com/api/token",
-        data={
-            'client_id': client_id,
-            'client_secret': client_secret,
-            "grant_type": "authorization_code",
-            "code": auth_code,
-            "redirect_uri": "https://localhost:8000/callback",
-        },
-        #auth=(client_id, client_secret),
+def create_spotify_oauth(index):
+    return SpotifyOAuth(
+        client_id = client_id,
+        client_secret = client_secret,
+        redirect_uri = redirect_url,
+        scope=SCOPES[index]
     )
-    access_token = response.json()["access_token"]
-    return access_token
-
-def get_auth_header(token):
-    return {"Authorization": "Bearer " + token}
 
 
 
-def get_current_track(token):
-    track_url = 'https://api.spotify.com/v1/me/player/currently-playing'
-    response = get(track_url, headers=get_auth_header(token))
-    resp_json = response.json()
-
+def get_playlists(user_id):
     
-    return resp_json
+    response = get(
+        f'https://api.spotify.com/v1/users/{user_id}/playlists',
+        headers={
+            "Authorization": f"Bearer {tokens['get']}"
+        }
+    )
+    json_resp = response.json()
+    print(json_resp)
+    return json_resp
 
-#token = get_cc_token()
-#print(token)
+
+def get_current_track_id(token, output: str):
+
+    response = get(
+        'https://api.spotify.com/v1/me/player/currently-playing',
+        headers={
+            "Authorization": f"Bearer {token}"
+        }
+    )
+    json_resp = response.json()
+    if output == 'id':
+        return json_resp['item']['id']
+    elif output == 'name':
+        return json_resp['item']['name']
+
+def add_to_playlist(playlist_name):
+    playlist_id = playlists[playlist_name]
+    response = post(
+        f"https://api.spotify.com/v1/playlists/{playlist_id}/tracks?uris=spotify:track:{get_current_track_id(tokens['read'], 'id')}",
+        headers={
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {tokens['write']}"
+            },
+            data={
+                "uris": [f"spotify:track:{get_current_track_id(tokens['read'], 'id')}"],
+                "position": 0
+            }
+  )
+
+
+def on_activate_a():
+    add_to_playlist(playlist)
+    print(f"Added {get_current_track_id(tokens['read'], 'name')} to {playlist}")
+
+def on_activate_q():
+  listener.stop()
+  print("Listener stopped")
+
+listener = keyboard.GlobalHotKeys({
+    '<shift>+a': on_activate_a,
+    '<shift>+q': on_activate_q})
+listener.start()
+
+if __name__ == "__main__":
+
+  resp = input("Please copy and paste the URL you are directed to into the terminal 3 times. (This is to authenticate all 3 tokens) Type 'OK' to continue ")
+  if resp.lower() == 'ok':
+    tokens = {'read': make_token(0), 'write': make_token(1), 'get': make_token(2)}
+    
+  playlists = {
+          "skull": "3TUAKz4ZyA4zmq463ZPOFD",
+          "hand": "5YlNcpdieJnZAEh3VVCdkd",
+          "bomb": "47RHiaJdBqgG59B3kTJEs9",
+          "spade": "385RT8POmswXtDI0j0lymn",
+          "face": "25vy6ipJ6q8gf1xye34DyA",
+          "planet": "1zyzdCUIwG76jNMyD6erDr",
+          "rif": "5XoZXc0b3aCB6kQWslTnME",
+          "driving": "5Ztl2We2ZUOtRmF89LvDWi",
+          "sexy": "0AoDtIfF51GRF7eOebzszV",
+          "further-back": "7ADeHu1q2P7KBghwaX4HyO",
+          "throwback": "5s8DZdHUy4h0m58KvO4qeX",
+          "not-english": "7sPHvrKHzCVCPqghpneUcK",
+          "triste": "10r32NN0UnIb8s3prprICV"
+      }
+
+  print("These tokens will be valid for one hour before needing to be refreshed")
+  playlist = input("Enter playlist name or keyword (Enter 'show all' to view playlist dictionary): ")
+
+  while True:
+  
+    if playlist == 'show all':
+      print(playlists)
+      playlist = input("Enter playlist name or keyword (Enter 'show all' to view playlist dictionary): ")
+
+    if playlist in playlists:
+      print(f"Selected: {playlist}")
+      playlist = input("To select a different playlist type 'quit': ")
+
+    else:
+      playlist = input("Playlist not in dictionary, please enter a different name or keyword: ")
+    
+    if playlist.lower() == 'quit':
+      playlist = input("Enter playlist name or keyword (Enter 'show all' to view playlist dictionary): ")
